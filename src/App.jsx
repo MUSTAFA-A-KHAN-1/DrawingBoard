@@ -739,24 +739,72 @@ export default function App() {
     }
   };
 
+  // const downloadImage = () => {
+  //   const temp = document.createElement('canvas');
+  //   temp.width = CANVAS_WIDTH;
+  //   temp.height = CANVAS_HEIGHT;
+  //   const tCtx = temp.getContext('2d', { willReadFrequently: true });
+  //   tCtx.fillStyle = '#ffffff';
+  //   tCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  //   [...layers].reverse().forEach(l => {
+  //     if (l.visible && canvasRefs.current[l.id]) tCtx.drawImage(canvasRefs.current[l.id], 0, 0);
+  //   });
+  //   const link = document.createElement('a');
+  //   link.download = 'art.png';
+  //   link.href = temp.toDataURL();
+  //   link.click();
+  // };
+
+  // --- Components ---
+
   const downloadImage = () => {
+    // 1. Create the composite image (same as before)
     const temp = document.createElement('canvas');
     temp.width = CANVAS_WIDTH;
     temp.height = CANVAS_HEIGHT;
     const tCtx = temp.getContext('2d', { willReadFrequently: true });
+    
     tCtx.fillStyle = '#ffffff';
     tCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
     [...layers].reverse().forEach(l => {
-      if (l.visible && canvasRefs.current[l.id]) tCtx.drawImage(canvasRefs.current[l.id], 0, 0);
+      if (l.visible && canvasRefs.current[l.id]) {
+        tCtx.drawImage(canvasRefs.current[l.id], 0, 0);
+      }
     });
-    const link = document.createElement('a');
-    link.download = 'art.png';
-    link.href = temp.toDataURL();
-    link.click();
+
+    // 2. Convert to Blob (better for sharing than DataURL)
+    temp.toBlob(async (blob) => {
+      if (!blob) return;
+
+      const file = new File([blob], "drawing.png", { type: "image/png" });
+
+      // 3. Try Native Share (Works best on Telegram Mobile)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'My Drawing',
+            text: 'Check out my drawing!',
+          });
+          return; // Stop here if share was successful
+        } catch (error) {
+          console.log('Share canceled or failed', error);
+          // If share fails, fall through to the download method below
+        }
+      }
+
+      // 4. Fallback for Desktop / Web Browsers
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'drawing.png';
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 'image/png');
   };
-
-  // --- Components ---
-
   const SettingsPanel = () => {
     const tool = tools[activeToolId];
     if (!tool) return null;
