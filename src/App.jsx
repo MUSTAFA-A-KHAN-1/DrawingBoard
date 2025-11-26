@@ -26,7 +26,9 @@ import {
   Settings,
   X,
   Scan,
-  PaintBucket // Added PaintBucket icon
+  PaintBucket,
+  PanelLeft,
+  PanelRight
 } from 'lucide-react';
 
 // Customized Resolution
@@ -116,10 +118,11 @@ export default function App() {
   const [color, setColor] = useState('#000000');
   
   // UI State
-  const [showUI, setShowUI] = useState(true);
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(false); 
   const [showSettings, setShowSettings] = useState(false);
   
-  // Transform State: Default to centered 0.25 scale to ensure visibility if calculation fails
+  // Transform State
   const [transform, setTransform] = useState({ x: 100, y: 100, k: 0.25 }); 
   
   // Interaction State
@@ -151,7 +154,11 @@ export default function App() {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
-    // Force a fit after a brief delay
+    
+    if (window.innerWidth > 768) {
+      setShowRightPanel(true);
+    }
+
     setTimeout(fitCanvasToScreen, 100);
   }, []);
 
@@ -289,30 +296,24 @@ export default function App() {
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
     
-    // Get pixel data
     const imageData = ctx.getImageData(0, 0, w, h);
     const data = imageData.data;
     
-    // Helper to get pixel index
     const getPixelIndex = (x, y) => (y * w + x) * 4;
     
-    // Parse fill color from hex
     const r = parseInt(fillColor.slice(1, 3), 16);
     const g = parseInt(fillColor.slice(3, 5), 16);
     const b = parseInt(fillColor.slice(5, 7), 16);
-    const a = 255; // Full opacity for fill
+    const a = 255; 
 
-    // Get starting pixel color
     const startIdx = getPixelIndex(Math.floor(startX), Math.floor(startY));
     const startR = data[startIdx];
     const startG = data[startIdx + 1];
     const startB = data[startIdx + 2];
     const startA = data[startIdx + 3];
 
-    // If filling with same color, return
     if (startR === r && startG === g && startB === b && startA === a) return;
 
-    // Match function
     const matchStartColor = (idx) => {
       return data[idx] === startR &&
              data[idx + 1] === startG &&
@@ -320,7 +321,6 @@ export default function App() {
              data[idx + 3] === startA;
     };
 
-    // Color function
     const colorPixel = (idx) => {
       data[idx] = r;
       data[idx + 1] = g;
@@ -328,7 +328,6 @@ export default function App() {
       data[idx + 3] = a;
     };
 
-    // Stack-based flood fill
     const stack = [[Math.floor(startX), Math.floor(startY)]];
 
     while (stack.length) {
@@ -488,9 +487,6 @@ export default function App() {
     
     if ((isOverlay || mode === 'SHAPE' || snappedShape) && overlayCanvasRef.current && canvasRefs.current[activeLayerId]) {
         const ctx = canvasRefs.current[activeLayerId].getContext('2d', { willReadFrequently: true });
-        
-        // SAFEGUARD: If mode is SHAPE, activeToolId might be 'RECT', which isn't in tools.
-        // Fallback to PENCIL settings in that case to avoid crash.
         const tool = tools[activeToolId] || tools['PENCIL'];
         
         if (tool) {
@@ -515,14 +511,13 @@ export default function App() {
 
     const { x, y } = getCoordinates(e);
     
-    // === FILL TOOL LOGIC ===
     if (activeToolId === 'FILL') {
         const canvas = canvasRefs.current[activeLayerId];
         if (canvas) {
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             floodFill(ctx, x, y, color);
         }
-        return; // Return early, no stroke handling needed
+        return; 
     }
 
     lastPos.current = { x, y };
@@ -537,7 +532,6 @@ export default function App() {
         const oCtx = overlayCanvasRef.current.getContext('2d', { willReadFrequently: true });
         oCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         const tool = tools[activeToolId];
-        // Safety check for tool existence
         if (tool) {
             overlayCanvasRef.current.style.opacity = tool.alpha;
             overlayCanvasRef.current.style.mixBlendMode = tool.composite === 'source-over' ? 'normal' : tool.composite;
@@ -650,8 +644,6 @@ export default function App() {
     if (mode === 'BRUSH' && !snappedShape && isDrawing) {
         const isOverlay = OVERLAY_TOOLS.includes(activeToolId);
         const targetCanvas = isOverlay ? overlayCanvasRef.current : canvasRefs.current[activeLayerId];
-        
-        // Safe access to active tool
         const activeTool = tools[activeToolId];
         
         if (targetCanvas && activeTool) {
@@ -668,7 +660,6 @@ export default function App() {
             const isTextured = ['CRAYON', 'CHARCOAL', 'SPRAY'].includes(activeTool.id);
 
             if (dist < 1) {
-                // === Handle Taps ===
                 if (isTextured) {
                     drawTextureAt(ctx, lastPos.current.x, lastPos.current.y, activeTool, activeTool.size);
                 } else {
@@ -678,13 +669,9 @@ export default function App() {
                     ctx.fill();
                 }
             } else {
-                // === Handle Line End (Texture aware) ===
                 if (isTextured) {
-                    // Draw final textured segment from lastMid to lastPos
-                    // We explicitly call drawLine for the segment
                     drawLine(ctx, lastMidRef.current, lastPos.current, activeTool, 0.5, isOverlay);
                 } else {
-                    // Standard smooth finish
                     ctx.beginPath();
                     ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y);
                     ctx.lineTo(lastPos.current.x, lastPos.current.y);
@@ -705,7 +692,6 @@ export default function App() {
   const handleWheel = (e) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      // Updated limit: Max 40x zoom
       const newScale = Math.min(Math.max(transform.k * (1 - e.deltaY * 0.001), 0.05), 40);
       setTransform(t => ({ ...t, k: newScale }));
     }
@@ -729,7 +715,6 @@ export default function App() {
       const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       const currentCenter = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
       const { startDist, startScale, startX, startY, startCenter } = gestureRef.current;
-      // Updated limit: Max 40x zoom
       const scale = Math.min(Math.max(startScale * (currentDist / startDist), 0.05), 40);
       const contentPointX = (startCenter.x - startX) / startScale;
       const contentPointY = (startCenter.y - startY) / startScale;
@@ -739,78 +724,30 @@ export default function App() {
     }
   };
 
-  // const downloadImage = () => {
-  //   const temp = document.createElement('canvas');
-  //   temp.width = CANVAS_WIDTH;
-  //   temp.height = CANVAS_HEIGHT;
-  //   const tCtx = temp.getContext('2d', { willReadFrequently: true });
-  //   tCtx.fillStyle = '#ffffff';
-  //   tCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  //   [...layers].reverse().forEach(l => {
-  //     if (l.visible && canvasRefs.current[l.id]) tCtx.drawImage(canvasRefs.current[l.id], 0, 0);
-  //   });
-  //   const link = document.createElement('a');
-  //   link.download = 'art.png';
-  //   link.href = temp.toDataURL();
-  //   link.click();
-  // };
-
-  // --- Components ---
-
   const downloadImage = () => {
-    // 1. Create the composite image (same as before)
     const temp = document.createElement('canvas');
     temp.width = CANVAS_WIDTH;
     temp.height = CANVAS_HEIGHT;
     const tCtx = temp.getContext('2d', { willReadFrequently: true });
-    
     tCtx.fillStyle = '#ffffff';
     tCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    
     [...layers].reverse().forEach(l => {
-      if (l.visible && canvasRefs.current[l.id]) {
-        tCtx.drawImage(canvasRefs.current[l.id], 0, 0);
-      }
+      if (l.visible && canvasRefs.current[l.id]) tCtx.drawImage(canvasRefs.current[l.id], 0, 0);
     });
-
-    // 2. Convert to Blob (better for sharing than DataURL)
-    temp.toBlob(async (blob) => {
-      if (!blob) return;
-
-      const file = new File([blob], "drawing.png", { type: "image/png" });
-
-      // 3. Try Native Share (Works best on Telegram Mobile)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'My Drawing',
-            text: 'Check out my drawing!',
-          });
-          return; // Stop here if share was successful
-        } catch (error) {
-          console.log('Share canceled or failed', error);
-          // If share fails, fall through to the download method below
-        }
-      }
-
-      // 4. Fallback for Desktop / Web Browsers
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = 'drawing.png';
-      link.href = url;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 'image/png');
+    const link = document.createElement('a');
+    link.download = 'art.png';
+    link.href = temp.toDataURL();
+    link.click();
   };
+
+  // --- Components ---
+
   const SettingsPanel = () => {
     const tool = tools[activeToolId];
     if (!tool) return null;
 
     return (
-      <div className="absolute left-20 top-0 bottom-0 w-64 bg-neutral-800 border-r border-neutral-700 p-4 overflow-y-auto z-20 shadow-2xl flex flex-col gap-6 slide-in-from-left">
+      <div className="absolute left-12 md:left-20 top-12 bottom-14 w-64 bg-neutral-800 border-r border-neutral-700 p-4 overflow-y-auto z-50 shadow-2xl flex flex-col gap-6 slide-in-from-left">
          <div className="flex items-center justify-between">
             <h2 className="font-bold text-white text-sm flex items-center gap-2">
                <Settings className="w-4 h-4" />
@@ -949,70 +886,27 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-neutral-900 text-neutral-200 overflow-hidden font-sans select-none touch-none">
       
-      {showUI && (
-        <header className="h-14 bg-neutral-800 border-b border-neutral-700 flex items-center justify-between px-4 shrink-0 z-30 transition-all">
+      {/* --- Top Info Bar (Safe Area for Status Bar) --- */}
+      <div className="h-12 bg-neutral-900/90 backdrop-blur flex items-center justify-center border-b border-neutral-700 z-50 shrink-0 pt-2">
           <div className="flex items-center gap-2">
-            <div className="bg-indigo-600 p-1.5 rounded-lg">
-              <Palette className="w-5 h-5 text-white" />
+            <div className="bg-indigo-600 p-1 rounded">
+              <Palette className="w-3 h-3 text-white" />
             </div>
-            <h1 className="font-bold text-lg text-white hidden sm:block">LayerPaint</h1>
-            
-            <div className="h-6 w-px bg-neutral-600 mx-2"></div>
-            <button 
-              onClick={undo}
-              disabled={history.length === 0}
-              className="flex items-center gap-1 text-neutral-300 hover:text-white disabled:opacity-30 active:scale-95 transition-transform"
-            >
-              <Undo className="w-5 h-5" />
-              <span className="text-xs">Undo</span>
-            </button>
+            <span className="font-bold text-xs text-white tracking-wide">LAYERPAINT</span>
           </div>
+      </div>
 
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={fitCanvasToScreen}
-              className="p-2 hover:bg-neutral-700 rounded-md text-neutral-400 hover:text-white"
-              title="Recenter Canvas"
-            >
-              <Scan className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => setShowUI(false)}
-              className="p-2 hover:bg-neutral-700 rounded-md text-neutral-400 hover:text-white"
-              title="Fullscreen Mode"
-            >
-              <Maximize className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={downloadImage}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-sm transition-colors"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Export</span>
-            </button>
-          </div>
-        </header>
-      )}
-
-      {!showUI && (
-        <button 
-          onClick={() => setShowUI(true)}
-          className="absolute top-4 right-4 z-50 p-3 bg-neutral-800/90 backdrop-blur rounded-full text-white shadow-lg hover:bg-neutral-700 transition-all"
-        >
-          <Minimize className="w-6 h-6" />
-        </button>
-      )}
-
+      {/* --- Main Workspace --- */}
       <div className="flex flex-1 overflow-hidden relative">
         
-        {/* --- Left Toolbar --- */}
+        {/* --- Left Toolbar (Tools) --- */}
         <div className={`
-            bg-neutral-800 border-r border-neutral-700 flex flex-col items-center py-4 gap-4 overflow-y-auto z-20 custom-scrollbar shadow-xl transition-all duration-300
-            ${showUI ? 'w-20 translate-x-0' : 'w-0 -translate-x-full opacity-0 pointer-events-none'}
+            absolute left-0 top-0 bottom-0 w-14 md:w-20 bg-neutral-800 border-r border-neutral-700 flex flex-col items-center py-4 gap-4 overflow-y-auto z-40 custom-scrollbar shadow-xl transition-transform duration-300 ease-in-out
+            ${showLeftPanel ? 'translate-x-0' : '-translate-x-full'}
         `}>
           
-          <div className="flex flex-col gap-1 w-full px-2">
-            <span className="text-[10px] text-neutral-500 font-bold uppercase text-center mb-1">Brushes</span>
+          <div className="flex flex-col gap-1 w-full px-1">
+            <span className="text-[8px] md:text-[10px] text-neutral-500 font-bold uppercase text-center mb-1">Brushes</span>
             {Object.values(tools).map((t) => (
               <button
                 key={t.id}
@@ -1023,9 +917,9 @@ export default function App() {
                     : 'text-neutral-400 hover:bg-neutral-700 hover:text-white'
                 }`}
               >
-                <t.icon className="w-5 h-5" />
-                <span className="text-[9px] mt-0.5">{t.label}</span>
-                {mode === 'BRUSH' && activeToolId === t.id && (
+                <t.icon className="w-5 h-5 md:w-5 md:h-5" />
+                <span className="text-[9px] mt-0.5 hidden md:block">{t.label}</span>
+                {mode === 'BRUSH' && activeToolId === t.id && activeToolId !== 'FILL' && (
                     <div onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); }} className="absolute -right-1 -top-1 bg-white text-indigo-600 rounded-full p-0.5 shadow cursor-pointer hover:scale-110 transition-transform">
                         <Settings className="w-3 h-3" />
                     </div>
@@ -1034,10 +928,10 @@ export default function App() {
             ))}
           </div>
 
-          <div className="w-10 h-px bg-neutral-700 shrink-0"></div>
+          <div className="w-8 h-px bg-neutral-700 shrink-0"></div>
 
-          <div className="flex flex-col gap-1 w-full px-2">
-            <span className="text-[10px] text-neutral-500 font-bold uppercase text-center mb-1">Shapes</span>
+          <div className="flex flex-col gap-1 w-full px-1">
+            <span className="text-[8px] md:text-[10px] text-neutral-500 font-bold uppercase text-center mb-1">Shapes</span>
             {Object.values(SHAPE_TOOLS).map((t) => (
               <button
                 key={t.id}
@@ -1049,43 +943,45 @@ export default function App() {
                 }`}
               >
                 <t.icon className="w-5 h-5" />
-                <span className="text-[9px] mt-0.5">{t.label}</span>
+                <span className="text-[9px] mt-0.5 hidden md:block">{t.label}</span>
               </button>
             ))}
           </div>
 
-          <div className="w-10 h-px bg-neutral-700 shrink-0"></div>
+          <div className="w-8 h-px bg-neutral-700 shrink-0"></div>
 
-          <div className="flex flex-col gap-3 w-full px-2 items-center">
+          <div className="flex flex-col gap-3 w-full px-2 items-center pb-20">
              <input 
                 type="color" 
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 className="w-8 h-8 rounded-full border-2 border-neutral-600 cursor-pointer p-0"
              />
-             <div className="h-20 flex items-center justify-center py-2 w-full">
-                <input
-                  type="range"
-                  min="0.1"
-                  max="1000"
-                  step="0.1"
-                  orient="vertical"
-                  value={tools[activeToolId]?.size || 5}
-                  onChange={(e) => updateToolSettings('size', parseFloat(e.target.value))}
-                  className="w-1.5 h-full appearance-none bg-neutral-700 rounded-lg outline-none cursor-pointer accent-indigo-500"
-                  style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }}
-                />
-             </div>
+             {activeToolId !== 'FILL' && (
+                 <div className="h-20 flex items-center justify-center py-2 w-full">
+                    <input
+                    type="range"
+                    min="0.1"
+                    max="1000"
+                    step="0.1"
+                    orient="vertical"
+                    value={tools[activeToolId]?.size || 5}
+                    onChange={(e) => updateToolSettings('size', parseFloat(e.target.value))}
+                    className="w-1.5 h-full appearance-none bg-neutral-700 rounded-lg outline-none cursor-pointer accent-indigo-500"
+                    style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }}
+                    />
+                 </div>
+             )}
           </div>
         </div>
 
         {/* --- Settings Panel Overlay --- */}
         {showSettings && <SettingsPanel />}
 
-        {/* --- Center Canvas --- */}
+        {/* --- Center Canvas Area --- */}
         <div 
             ref={workspaceRef}
-            className="flex-1 bg-neutral-900 overflow-hidden relative cursor-crosshair"
+            className="flex-1 bg-neutral-900 overflow-hidden relative cursor-crosshair z-0"
             onWheel={handleWheel}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
@@ -1107,7 +1003,6 @@ export default function App() {
                 onPointerUp={stopDrawing}
                 onPointerLeave={stopDrawing}
             >
-                {/* Regular Layers */}
                 {[...layers].reverse().map((layer) => (
                 <canvas
                     key={layer.id}
@@ -1119,7 +1014,6 @@ export default function App() {
                 />
                 ))}
 
-                {/* --- Temporary Overlay Layer (For continuous transparent strokes) --- */}
                 <canvas
                     ref={overlayCanvasRef}
                     width={CANVAS_WIDTH}
@@ -1130,15 +1024,11 @@ export default function App() {
             </div>
           </div>
           
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 pointer-events-none">
+          {/* Shape Snap Notification */}
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-4 pointer-events-none z-30">
             {snappedShape && (
                 <div className="bg-indigo-600/90 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg animate-bounce">
                     Snapped: {snappedShape}
-                </div>
-            )}
-            {showUI && (
-                <div className="bg-neutral-800/80 backdrop-blur text-xs px-4 py-2 rounded-full border border-neutral-700 shadow-lg text-neutral-400">
-                    {Math.round(transform.k * 100)}% • {layers.find(l => l.id === activeLayerId)?.name}
                 </div>
             )}
           </div>
@@ -1146,8 +1036,8 @@ export default function App() {
 
         {/* --- Right Layers Panel --- */}
         <div className={`
-            bg-neutral-800 border-l border-neutral-700 flex flex-col shrink-0 z-20 shadow-xl transition-all duration-300
-            ${showUI ? 'w-64 translate-x-0' : 'w-0 translate-x-full opacity-0 pointer-events-none'}
+            absolute right-0 top-0 bottom-0 w-64 bg-neutral-800 border-l border-neutral-700 flex flex-col z-40 shadow-xl transition-transform duration-300 ease-in-out
+            ${showRightPanel ? 'translate-x-0' : 'translate-x-full'}
         `}>
           <div className="p-4 border-b border-neutral-700 flex items-center justify-between">
             <h2 className="font-semibold flex items-center gap-2 text-sm text-neutral-300">
@@ -1163,7 +1053,7 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+          <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2 pb-20">
             {layers.map((layer, i) => (
               <div 
                 key={layer.id}
@@ -1192,6 +1082,53 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* --- Bottom Control Bar --- */}
+      <div className="h-14 bg-neutral-800 border-t border-neutral-700 flex items-center justify-between px-4 pb-safe z-50 shadow-2xl shrink-0 relative">
+          {/* Left: Tools Toggle & Undo */}
+          <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowLeftPanel(!showLeftPanel)}
+                className={`p-2 rounded-md transition-colors ${showLeftPanel ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
+              >
+                  <PanelLeft className="w-5 h-5" />
+              </button>
+              <div className="h-6 w-px bg-neutral-600 mx-1"></div>
+              <button 
+                onClick={undo}
+                disabled={history.length === 0}
+                className="p-2 text-neutral-300 hover:text-white disabled:opacity-30 active:scale-95 transition-transform"
+              >
+                <Undo className="w-5 h-5" />
+              </button>
+          </div>
+
+          {/* Center: Recenter */}
+          <button 
+                onClick={fitCanvasToScreen}
+                className="absolute left-1/2 -translate-x-1/2 -top-6 p-3 bg-neutral-700 hover:bg-neutral-600 rounded-full text-white shadow-lg border-4 border-neutral-800"
+          >
+              <Scan className="w-6 h-6" />
+          </button>
+
+          {/* Right: Export & Layers Toggle */}
+          <div className="flex items-center gap-2">
+              <button 
+                onClick={downloadImage}
+                className="p-2 text-neutral-400 hover:text-white"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+              <div className="h-6 w-px bg-neutral-600 mx-1"></div>
+              <button 
+                onClick={() => setShowRightPanel(!showRightPanel)}
+                className={`p-2 rounded-md transition-colors ${showRightPanel ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
+              >
+                  <PanelRight className="w-5 h-5" />
+              </button>
+          </div>
+      </div>
+
     </div>
   );
 }
